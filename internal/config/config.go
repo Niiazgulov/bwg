@@ -16,6 +16,7 @@ type Config struct {
 	ServerAddress  string `json:"server_address"`
 	BaseURLAddress string `json:"base_url"`
 	DBPath         string `json:"database_path"`
+	WorkerCount    int
 }
 
 // Функция для создания нового объекта конфигурации.
@@ -24,6 +25,7 @@ func NewConfig() (*Config, error) {
 		BaseURLAddress: "",
 		ServerAddress:  "",
 		DBPath:         "",
+		WorkerCount:    15,
 	}
 	flag.StringVar(&cfg.ServerAddress, "a", "", "host to listen on")
 	flag.StringVar(&cfg.BaseURLAddress, "b", "", "base url")

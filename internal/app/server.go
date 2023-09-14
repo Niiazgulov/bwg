@@ -28,21 +28,35 @@ func Start() {
 		log.Fatal(err)
 	}
 	defer repo.Close()
-	router := Route(repo)
-	log.Fatal(http.ListenAndServe(config.Cfg.ServerAddress, router))
-}
-
-func Route(repo storage.Transaction) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-
+	jobCh := make(chan storage.InvoiceJob, 200)
+	for i := 0; i < cfg.WorkerCount; i++ {
+		go func() {
+			for job := range jobCh {
+				if err := repo.Invoice(job); err != nil {
+					log.Println("Error while invoice", err)
+				}
+			}
+		}()
+	}
+	jobCh2 := make(chan storage.InvoiceJob, 200)
+	for i := 0; i < cfg.WorkerCount; i++ {
+		go func() {
+			for job := range jobCh2 {
+				if err := repo.Withdraw(job); err != nil {
+					log.Println("Error while Withdraw", err)
+				}
+			}
+		}()
+	}
 	r.Route("/", func(r chi.Router) {
 		r.Get("/", handlers.GetBalanceHandler(repo))
-		r.Post("/invoice", handlers.PostInvoiceHandler(repo))
-		r.Post("/withdraw", handlers.PostWithdrawHandler(repo))
+		r.Post("/invoice", handlers.PostInvoiceHandler(repo, jobCh))
+		r.Post("/withdraw", handlers.PostWithdrawHandler(repo, jobCh2))
 	})
-	return r
+	log.Fatal(http.ListenAndServe(config.Cfg.ServerAddress, r))
 }

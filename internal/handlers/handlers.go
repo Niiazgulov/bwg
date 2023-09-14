@@ -2,44 +2,60 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 
 	"github.com/Niiazgulov/bwg.git/internal/storage"
 )
 
-func PostInvoiceHandler(repo storage.Transaction) http.HandlerFunc {
+// Обработчик входящих транзакций. На вход подается список объектов JSON
+func PostInvoiceHandler(repo storage.Transaction, jobCh chan storage.InvoiceJob) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var inputMoney storage.Money
-		if err := json.NewDecoder(r.Body).Decode(&inputMoney); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		err := repo.Invoice(inputMoney)
+		request, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "PostInvoiceHandler: Status internal server error", http.StatusInternalServerError)
+			http.Error(w, "PostInvoiceHandler: can't read r.Body", http.StatusBadRequest)
 			return
 		}
+		requestMoney := make([]storage.Money, 0)
+		err = json.Unmarshal(request, &requestMoney)
+		if err != nil {
+			http.Error(w, "PostInvoiceHandler: can't Unmarshal request", http.StatusBadRequest)
+			return
+		}
+		for _, v := range requestMoney {
+			v.Status = "Created"
+		}
+		jobCh <- storage.InvoiceJob{RequestMoney: requestMoney}
 		w.WriteHeader(http.StatusCreated)
 	}
 }
 
-func PostWithdrawHandler(repo storage.Transaction) http.HandlerFunc {
+// Обработчик исходящих транзакций. На вход подается список объектов JSON
+func PostWithdrawHandler(repo storage.Transaction, jobCh2 chan storage.InvoiceJob) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var inputMoney storage.Money
-		if err := json.NewDecoder(r.Body).Decode(&inputMoney); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		err := repo.Withdraw(inputMoney)
+		request, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "PostWithdrawHandler: Status internal server error", http.StatusInternalServerError)
+			http.Error(w, "PostWithdrawHandler: can't read r.Body", http.StatusBadRequest)
 			return
 		}
+		reqMoney := make([]storage.Money, 0)
+		err = json.Unmarshal(request, &reqMoney)
+		if err != nil {
+			http.Error(w, "PostWithdrawHandler: can't Unmarshal request", http.StatusBadRequest)
+			return
+		}
+		for _, v := range reqMoney {
+			v.Status = "Created"
+			fmt.Println(v.Amount, v.CardID)
+		}
+		jobCh2 <- storage.InvoiceJob{RequestMoney: reqMoney}
 		w.WriteHeader(http.StatusCreated)
 	}
 }
 
+// Обработчик для проверки баланса
 func GetBalanceHandler(repo storage.Transaction) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		outputMoney, err := repo.GetBalance()
